@@ -10,13 +10,16 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import java.awt.*;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
 import java.io.*;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
 public class CsrfTab extends JComponent {
 
-    public Map<String, Boolean> config = new HashMap<String, Boolean>();
+    public Map<String, Object> config = new HashMap<String, Object>();
 
     private final Logging logging;
 
@@ -35,7 +38,7 @@ public class CsrfTab extends JComponent {
     private JRadioButton radioButton_black;
     private JRadioButton radioButton_white;
     private JLabel label_domain;
-    private JTextField textField2;
+    private JTextField textField_domain;
     private JScrollPane scrollPane_log;
     private JTable table_log;
     private JSplitPane splitPane_httpDetail;
@@ -43,8 +46,12 @@ public class CsrfTab extends JComponent {
     private HttpResponseEditor httpResponseEditor;
     private TableColumn column;
 
+    private JButton button_save;
+
     public CsrfTab(MontoyaApi montoyaApi) {
+
         this.logging = montoyaApi.logging();
+        loadConfig();
 //        Panel panel = new Panel();
 //        panel.setLayout(new GridLayout(2, 8,5,5));
         setLayout(new BorderLayout());
@@ -66,8 +73,9 @@ public class CsrfTab extends JComponent {
         radioButton_black = new JRadioButton();
         radioButton_white = new JRadioButton();
         label_domain = new JLabel();
-        textField2 = new JTextField();
+        textField_domain = new JTextField();
         splitPane_httpDetail = new JSplitPane();
+        button_save = new JButton("保存配置");
         scrollPane_log = new JScrollPane() {
             @Override
             public Dimension getPreferredSize() {
@@ -95,30 +103,37 @@ public class CsrfTab extends JComponent {
 
                 //---- checkBox_get ----
                 checkBox_get.setText("GET");
+                checkBox_get.setSelected((Boolean) config.get("GET"));
                 panel_method.add(checkBox_get);
 
                 //---- checkBox_post ----
                 checkBox_post.setText("POST");
+                checkBox_post.setSelected((Boolean) config.get("POST"));
                 panel_method.add(checkBox_post);
 
                 //---- checkBox_put ----
                 checkBox_put.setText("PUT");
+                checkBox_put.setSelected((Boolean) config.get("PUT"));
                 panel_method.add(checkBox_put);
 
                 //---- checkBox_delete ----
                 checkBox_delete.setText("DELETE");
+                checkBox_delete.setSelected((Boolean) config.get("DELETE"));
                 panel_method.add(checkBox_delete);
 
                 //---- checkBox_update ----
                 checkBox_update.setText("UPDATE");
+                checkBox_update.setSelected((Boolean) config.get("UPDATE"));
                 panel_method.add(checkBox_update);
 
                 //---- checkBox_head ----
                 checkBox_head.setText("HEAD");
+                checkBox_head.setSelected((Boolean) config.get("HEAD"));
                 panel_method.add(checkBox_head);
 
                 //---- checkBox_options ----
                 checkBox_options.setText("OPTIONS");
+                checkBox_options.setSelected((Boolean) config.get("OPTIONS"));
                 panel_method.add(checkBox_options);
             }
             panel_config.add(panel_method, BorderLayout.NORTH);
@@ -129,10 +144,12 @@ public class CsrfTab extends JComponent {
 
                 //---- radioButton_black ----
                 radioButton_black.setText("黑名单");
+                radioButton_black.setSelected((Boolean) config.get("BLACK"));
                 panel_domain.add(radioButton_black);
 
                 //---- radioButton_white ----
                 radioButton_white.setText("白名单");
+                radioButton_white.setSelected((Boolean) config.get("WHITE"));
                 panel_domain.add(radioButton_white);
 
                 //---- label_domain ----
@@ -140,8 +157,16 @@ public class CsrfTab extends JComponent {
                 panel_domain.add(label_domain);
 
                 //---- textField2 ----
-                textField2.setColumns(60);
-                panel_domain.add(textField2);
+                textField_domain.setColumns(60);
+                textField_domain.setText((String) config.get("DOMAIN"));
+                panel_domain.add(textField_domain);
+
+                //---- button_save ----
+                button_save.addActionListener(e -> {
+                    writeConfig(checkBox_get.isSelected(), checkBox_post.isSelected(), checkBox_put.isSelected(), checkBox_delete.isSelected(), checkBox_update.isSelected(), checkBox_head.isSelected(), checkBox_options.isSelected(), radioButton_black.isSelected(), radioButton_white.isSelected(), textField_domain.getText());
+                    JOptionPane.showMessageDialog(null, "保存成功", "提示", JOptionPane.INFORMATION_MESSAGE);
+                });
+                panel_domain.add(button_save);
             }
             panel_config.add(panel_domain, BorderLayout.SOUTH);
         }
@@ -188,13 +213,12 @@ public class CsrfTab extends JComponent {
         buttonGroup_blackOrWhite.add(radioButton_white);
 
 
-
         add(panel_main);
         loadConfig();
 
     }
 
-    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update) {
+    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean black, boolean white, String domain) {
         File file = new File("csrf4burp.conf");
         StringBuilder sb = new StringBuilder();
         sb.append(get);
@@ -206,7 +230,16 @@ public class CsrfTab extends JComponent {
         sb.append(delete);
         sb.append(",");
         sb.append(update);
+        sb.append(",");
+        sb.append(head);
+        sb.append(",");
+        sb.append(options);
         sb.append("|");
+        sb.append(black);
+        sb.append(",");
+        sb.append(white);
+        sb.append("|");
+        sb.append(domain);
         try {
             FileWriter fileWriter = new FileWriter(file);
             fileWriter.write(sb.toString());
@@ -222,29 +255,45 @@ public class CsrfTab extends JComponent {
         try {
             File file = new File("csrf4burp.conf");
             if (file.exists()) {
+                //读取配置文件
                 FileReader fileReader = new FileReader(file);
                 BufferedReader bufferedReader = new BufferedReader(fileReader);
                 String tmpstr = bufferedReader.readLine();
+                fileReader.close();
                 if (tmpstr == null || !tmpstr.contains("|")) {
-                    writeConfig(false, true, false, false, false);
-                    tmpstr = "false,true,false,false,false|";
+                    //配置文件格式错误
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空");
+                    tmpstr = "false,true,false,false,false,false,false|true,false|空";
                 }
+                //解析配置文件
                 String[] configStr = tmpstr.split("\\|");
                 String[] methods = configStr[0].split(",");
+                String[] blackOrWhite = configStr[1].split(",");
+                logging.logToOutput(Arrays.toString(configStr));
+                String domain = configStr[2];
                 config.put("GET", Boolean.parseBoolean(methods[0]));
                 config.put("POST", Boolean.parseBoolean(methods[1]));
                 config.put("PUT", Boolean.parseBoolean(methods[2]));
                 config.put("DELETE", Boolean.parseBoolean(methods[3]));
                 config.put("UPDATE", Boolean.parseBoolean(methods[4]));
-
+                config.put("HEAD", Boolean.parseBoolean(methods[5]));
+                config.put("OPTIONS", Boolean.parseBoolean(methods[6]));
+                config.put("BLACK", Boolean.parseBoolean(blackOrWhite[0]));
+                config.put("WHITE", Boolean.parseBoolean(blackOrWhite[1]));
+                config.put("DOMAIN", domain);
             } else {
                 config.put("GET", false);
                 config.put("POST", true);
                 config.put("PUT", false);
                 config.put("DELETE", false);
                 config.put("UPDATE", false);
+                config.put("HEAD", false);
+                config.put("OPTIONS", false);
+                config.put("BLACK", true);
+                config.put("WHITE", false);
+                config.put("DOMAIN", "空");
                 if (file.createNewFile()) {
-                    writeConfig(false, true, false, false, false);
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空");
                 }
             }
 
