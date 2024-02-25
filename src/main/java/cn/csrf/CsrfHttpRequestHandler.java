@@ -17,11 +17,7 @@ public class CsrfHttpRequestHandler implements ProxyRequestHandler {
     }
     @Override
     public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest interceptedRequest) {
-        String body = interceptedRequest.bodyToString();
-        logging.logToOutput("Request received: " + interceptedRequest.url());
-        logging.logToOutput("Request method: " + interceptedRequest.method());
-        logging.logToOutput("Request headers: " + interceptedRequest.headers());
-        logging.logToOutput("Request body: " + body);
+        tab.addLog(String.valueOf(interceptedRequest.messageId()),interceptedRequest.method(), interceptedRequest.url(),"","","","");
         return null;
     }
 

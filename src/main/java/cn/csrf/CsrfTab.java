@@ -10,10 +10,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import java.awt.*;
-import java.awt.event.ItemEvent;
-import java.awt.event.ItemListener;
 import java.io.*;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,7 +19,6 @@ public class CsrfTab extends JComponent {
     public Map<String, Object> config = new HashMap<String, Object>();
 
     private final Logging logging;
-
     private JPanel panel_main;
     private JPanel panel_config;
     private JPanel panel_method;
@@ -41,11 +37,11 @@ public class CsrfTab extends JComponent {
     private JTextField textField_domain;
     private JScrollPane scrollPane_log;
     private JTable table_log;
-    private JSplitPane splitPane_httpDetail;
+    private JPanel panel_httpDetail;
     private HttpRequestEditor httpRequestEditor;
-    private HttpResponseEditor httpResponseEditor;
+    private HttpResponseEditor httpResponseEditorNoCookie;
+    private HttpResponseEditor httpResponseEditorRandomRef;
     private TableColumn column;
-
     private JButton button_save;
 
     public CsrfTab(MontoyaApi montoyaApi) {
@@ -74,20 +70,25 @@ public class CsrfTab extends JComponent {
         radioButton_white = new JRadioButton();
         label_domain = new JLabel();
         textField_domain = new JTextField();
-        splitPane_httpDetail = new JSplitPane();
+        panel_httpDetail = new JPanel();
         button_save = new JButton("保存配置");
+
         scrollPane_log = new JScrollPane() {
             @Override
             public Dimension getPreferredSize() {
                 return new Dimension(panel_main.getWidth(), (int) (panel_main.getHeight() * 0.3));
             }
         };
-        ;
-        table_log = new JTable();
-        splitPane_httpDetail = new JSplitPane();
         httpRequestEditor = montoyaApi.userInterface().createHttpRequestEditor(EditorOptions.READ_ONLY);
-        httpResponseEditor = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
-
+        httpResponseEditorNoCookie = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
+        httpResponseEditorRandomRef = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
+        table_log = new JTable(){
+            @Override
+            public void changeSelection(int rowIndex, int columnIndex, boolean toggle, boolean extend) {
+                super.changeSelection(rowIndex, columnIndex, toggle, extend);
+//                httpRequestEditor.setRequest(montoyaApi.http().);
+            }
+        };
 
         //======== panel_config ========
         {
@@ -175,10 +176,16 @@ public class CsrfTab extends JComponent {
         {
             //======== table_log ========
             {
-                String[] headers = {"#", "方法", "url", "疑似", "Cookie", "无Cookie", "随机Referer"};
-                int[] columnWidth = {50, 100, 300, 50, 100, 100, 100};
+                String[] headers = {"#", "URL", "方法", "疑似", "Cookie", "无Cookie", "随机Referer"};
+                int[] columnWidth = {50, 300, 100, 50, 100, 100, 100};
                 Object[][] cellData = null;
-                DefaultTableModel tableModel = new DefaultTableModel(cellData, headers);
+                DefaultTableModel tableModel = new DefaultTableModel(cellData, headers){
+                    @Override
+                    public boolean isCellEditable(int row, int column) {
+                        return false;
+                    }
+
+                };
 
                 table_log.setModel(tableModel);
                 table_log.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);// 以下设置表格列宽
@@ -199,14 +206,19 @@ public class CsrfTab extends JComponent {
 
         //======== splitPane_httpDetail ========
         {
-            splitPane_httpDetail.setOrientation(JSplitPane.HORIZONTAL_SPLIT);
+            panel_httpDetail.setLayout(new FlowLayout());
+
+//            panel_httpDetail.setOrientation(JSplitPane.HORIZONTAL_SPLIT);
             //---- button2 ----
-            splitPane_httpDetail.setLeftComponent(httpRequestEditor.uiComponent());
+            panel_httpDetail.add(httpRequestEditor.uiComponent());
 
             //---- button3 ----
-            splitPane_httpDetail.setRightComponent(httpResponseEditor.uiComponent());
+            panel_httpDetail.add(httpResponseEditorNoCookie.uiComponent());
+
+            //---- button4 ----
+            panel_httpDetail.add(httpResponseEditorRandomRef.uiComponent());
         }
-        panel_main.add(splitPane_httpDetail, BorderLayout.SOUTH);
+        panel_main.add(panel_httpDetail, BorderLayout.SOUTH);
         //---- buttonGroup_blackOrWhite ----
         var buttonGroup_blackOrWhite = new ButtonGroup();
         buttonGroup_blackOrWhite.add(radioButton_black);
@@ -214,8 +226,6 @@ public class CsrfTab extends JComponent {
 
 
         add(panel_main);
-        loadConfig();
-
     }
 
     public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean black, boolean white, String domain) {
@@ -269,7 +279,6 @@ public class CsrfTab extends JComponent {
                 String[] configStr = tmpstr.split("\\|");
                 String[] methods = configStr[0].split(",");
                 String[] blackOrWhite = configStr[1].split(",");
-                logging.logToOutput(Arrays.toString(configStr));
                 String domain = configStr[2];
                 config.put("GET", Boolean.parseBoolean(methods[0]));
                 config.put("POST", Boolean.parseBoolean(methods[1]));
@@ -302,4 +311,10 @@ public class CsrfTab extends JComponent {
         }
     }
 
+    public void addLog(String id,String url, String method, String suspicious, String hasCookie, String noCookie, String randomReferer) {
+        DefaultTableModel tableModel = (DefaultTableModel) table_log.getModel();
+//        String[] headers = {"#", "方法", "url", "疑似", "Cookie", "无Cookie", "随机Referer"};
+        String[] log = {id, url, method, suspicious, hasCookie, noCookie, randomReferer};
+        tableModel.addRow(log);
+    }
 }
