@@ -7,6 +7,8 @@ import burp.api.montoya.proxy.http.ProxyRequestHandler;
 import burp.api.montoya.proxy.http.ProxyRequestReceivedAction;
 import burp.api.montoya.proxy.http.ProxyRequestToBeSentAction;
 
+import java.net.MalformedURLException;
+
 public class CsrfHttpRequestHandler implements ProxyRequestHandler {
     private final Logging logging ;
     private final CsrfTab tab;
@@ -17,7 +19,11 @@ public class CsrfHttpRequestHandler implements ProxyRequestHandler {
     }
     @Override
     public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest interceptedRequest) {
-        tab.addLog(String.valueOf(interceptedRequest.messageId()),interceptedRequest.method(), interceptedRequest.url(),"","","","");
+        try {
+            tab.requestHandler(interceptedRequest);
+        } catch (MalformedURLException e) {
+            throw new RuntimeException(e);
+        }
         return null;
     }
 

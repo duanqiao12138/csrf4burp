@@ -2,6 +2,7 @@ package cn.csrf;
 
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.logging.Logging;
+import burp.api.montoya.proxy.http.InterceptedRequest;
 import burp.api.montoya.ui.editor.EditorOptions;
 import burp.api.montoya.ui.editor.HttpRequestEditor;
 import burp.api.montoya.ui.editor.HttpResponseEditor;
@@ -10,13 +11,19 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.io.*;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 
 public class CsrfTab extends JComponent {
 
-    public Map<String, Object> config = new HashMap<String, Object>();
+    public HashMap<String, Object> config = new HashMap<String, Object>();
+
+    private HashMap<Integer, InterceptedRequest> interceptedRequestHashMap = new HashMap<>();
 
     private final Logging logging;
     private JPanel panel_main;
@@ -31,16 +38,20 @@ public class CsrfTab extends JComponent {
     private JCheckBox checkBox_head;
     private JCheckBox checkBox_options;
     private JPanel panel_domain;
+    private JPanel panel_suffix;
     private JRadioButton radioButton_black;
     private JRadioButton radioButton_white;
     private JLabel label_domain;
     private JTextField textField_domain;
+    private JLabel label_suffix;
+    private JTextField textField_suffix;
     private JScrollPane scrollPane_log;
     private JTable table_log;
     private JPanel panel_httpDetail;
     private HttpRequestEditor httpRequestEditor;
     private HttpResponseEditor httpResponseEditorNoCookie;
     private HttpResponseEditor httpResponseEditorRandomRef;
+    //    private HttpResponseEditor httpResponseEditorRandomRef;
     private TableColumn column;
     private JButton button_save;
 
@@ -66,12 +77,21 @@ public class CsrfTab extends JComponent {
         checkBox_head = new JCheckBox();
         checkBox_options = new JCheckBox();
         panel_domain = new JPanel();
+        panel_suffix = new JPanel();
         radioButton_black = new JRadioButton();
         radioButton_white = new JRadioButton();
         label_domain = new JLabel();
         textField_domain = new JTextField();
+        label_suffix = new JLabel();
+        textField_suffix = new JTextField();
         panel_httpDetail = new JPanel();
         button_save = new JButton("保存配置");
+        httpRequestEditor = montoyaApi.userInterface().createHttpRequestEditor(EditorOptions.READ_ONLY);
+        httpResponseEditorNoCookie = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
+        httpResponseEditorRandomRef = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
+        Component httpRequestEditorComponent = httpRequestEditor.uiComponent();
+        Component httpResponseEditorNoCookieComponent = httpResponseEditorNoCookie.uiComponent();
+        Component httpResponseEditorRandomRefComponent = httpResponseEditorRandomRef.uiComponent();
 
         scrollPane_log = new JScrollPane() {
             @Override
@@ -79,14 +99,13 @@ public class CsrfTab extends JComponent {
                 return new Dimension(panel_main.getWidth(), (int) (panel_main.getHeight() * 0.3));
             }
         };
-        httpRequestEditor = montoyaApi.userInterface().createHttpRequestEditor(EditorOptions.READ_ONLY);
-        httpResponseEditorNoCookie = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
-        httpResponseEditorRandomRef = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
-        table_log = new JTable(){
+
+        table_log = new JTable() {
             @Override
             public void changeSelection(int rowIndex, int columnIndex, boolean toggle, boolean extend) {
                 super.changeSelection(rowIndex, columnIndex, toggle, extend);
-//                httpRequestEditor.setRequest(montoyaApi.http().);
+
+                httpRequestEditor.setRequest(interceptedRequestHashMap.get(Integer.parseInt((String) table_log.getValueAt(rowIndex, 0))));
             }
         };
 
@@ -161,25 +180,38 @@ public class CsrfTab extends JComponent {
                 textField_domain.setColumns(60);
                 textField_domain.setText((String) config.get("DOMAIN"));
                 panel_domain.add(textField_domain);
+            }
+            panel_config.add(panel_domain, BorderLayout.CENTER);
+            //======== panel_suffix ========
+            {
+                panel_suffix.setLayout(new FlowLayout());
 
+                //---- label_suffix ----
+                label_suffix.setText("后缀(半角逗号分隔):");
+                panel_suffix.add(label_suffix);
+
+                //---- textField_suffix ----
+                textField_suffix.setColumns(60);
+                textField_suffix.setText((String) config.get("SUFFIX"));
+                panel_suffix.add(textField_suffix);
                 //---- button_save ----
                 button_save.addActionListener(e -> {
-                    writeConfig(checkBox_get.isSelected(), checkBox_post.isSelected(), checkBox_put.isSelected(), checkBox_delete.isSelected(), checkBox_update.isSelected(), checkBox_head.isSelected(), checkBox_options.isSelected(), radioButton_black.isSelected(), radioButton_white.isSelected(), textField_domain.getText());
+                    writeConfig(checkBox_get.isSelected(), checkBox_post.isSelected(), checkBox_put.isSelected(), checkBox_delete.isSelected(), checkBox_update.isSelected(), checkBox_head.isSelected(), checkBox_options.isSelected(), radioButton_black.isSelected(), radioButton_white.isSelected(), textField_domain.getText(), textField_suffix.getText());
                     JOptionPane.showMessageDialog(null, "保存成功", "提示", JOptionPane.INFORMATION_MESSAGE);
                 });
-                panel_domain.add(button_save);
+                panel_suffix.add(button_save);
             }
-            panel_config.add(panel_domain, BorderLayout.SOUTH);
+            panel_config.add(panel_suffix, BorderLayout.SOUTH);
         }
         panel_main.add(panel_config, BorderLayout.NORTH);
         //======== scrollPane_log ========
         {
             //======== table_log ========
             {
-                String[] headers = {"#", "URL", "方法", "疑似", "Cookie", "无Cookie", "随机Referer"};
-                int[] columnWidth = {50, 300, 100, 50, 100, 100, 100};
+                String[] headers = {"#", "URL", "方法", "疑似", "Cookie", "原始长度", "无Cookie", "随机Referer"};
+                int[] columnWidth = {50, 300, 100, 50, 80, 80, 80, 80};
                 Object[][] cellData = null;
-                DefaultTableModel tableModel = new DefaultTableModel(cellData, headers){
+                DefaultTableModel tableModel = new DefaultTableModel(cellData, headers) {
                     @Override
                     public boolean isCellEditable(int row, int column) {
                         return false;
@@ -210,13 +242,15 @@ public class CsrfTab extends JComponent {
 
 //            panel_httpDetail.setOrientation(JSplitPane.HORIZONTAL_SPLIT);
             //---- button2 ----
-            panel_httpDetail.add(httpRequestEditor.uiComponent());
+            panel_httpDetail.add(httpRequestEditorComponent);
 
             //---- button3 ----
-            panel_httpDetail.add(httpResponseEditorNoCookie.uiComponent());
+            httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 3, panel_httpDetail.getHeight()));
+            panel_httpDetail.add(httpResponseEditorNoCookieComponent);
 
             //---- button4 ----
-            panel_httpDetail.add(httpResponseEditorRandomRef.uiComponent());
+            httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 3, panel_httpDetail.getHeight()));
+            panel_httpDetail.add(httpResponseEditorRandomRefComponent);
         }
         panel_main.add(panel_httpDetail, BorderLayout.SOUTH);
         //---- buttonGroup_blackOrWhite ----
@@ -226,9 +260,20 @@ public class CsrfTab extends JComponent {
 
 
         add(panel_main);
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                super.componentResized(e);
+                montoyaApi.logging().logToOutput("Windows resize" + e.getComponent().getWidth() + " " + e.getComponent().getHeight());
+                httpRequestEditorComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 3, (int) (e.getComponent().getHeight() * 0.5)));
+                httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 3, (int) (e.getComponent().getHeight() * 0.5)));
+                httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 3, (int) (e.getComponent().getHeight() * 0.5)));
+            }
+        });
+
     }
 
-    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean black, boolean white, String domain) {
+    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean black, boolean white, String domain, String suffix) {
         File file = new File("csrf4burp.conf");
         StringBuilder sb = new StringBuilder();
         sb.append(get);
@@ -250,6 +295,8 @@ public class CsrfTab extends JComponent {
         sb.append(white);
         sb.append("|");
         sb.append(domain);
+        sb.append("|");
+        sb.append(suffix);
         try {
             FileWriter fileWriter = new FileWriter(file);
             fileWriter.write(sb.toString());
@@ -272,8 +319,8 @@ public class CsrfTab extends JComponent {
                 fileReader.close();
                 if (tmpstr == null || !tmpstr.contains("|")) {
                     //配置文件格式错误
-                    writeConfig(false, true, false, false, false, false, false, true, false, "空");
-                    tmpstr = "false,true,false,false,false,false,false|true,false|空";
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空", ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
+                    tmpstr = "false,true,false,false,false,false,false|true,false|空|.js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt";
                 }
                 //解析配置文件
                 String[] configStr = tmpstr.split("\\|");
@@ -290,6 +337,8 @@ public class CsrfTab extends JComponent {
                 config.put("BLACK", Boolean.parseBoolean(blackOrWhite[0]));
                 config.put("WHITE", Boolean.parseBoolean(blackOrWhite[1]));
                 config.put("DOMAIN", domain);
+                config.put("SUFFIX", configStr[3]);
+
             } else {
                 config.put("GET", false);
                 config.put("POST", true);
@@ -301,8 +350,9 @@ public class CsrfTab extends JComponent {
                 config.put("BLACK", true);
                 config.put("WHITE", false);
                 config.put("DOMAIN", "空");
+                config.put("SUFFIX", ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
                 if (file.createNewFile()) {
-                    writeConfig(false, true, false, false, false, false, false, true, false, "空");
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空", ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
                 }
             }
 
@@ -311,10 +361,39 @@ public class CsrfTab extends JComponent {
         }
     }
 
-    public void addLog(String id,String url, String method, String suspicious, String hasCookie, String noCookie, String randomReferer) {
+    public void requestHandler(InterceptedRequest interceptedRequest) throws MalformedURLException {
+        URL url = new URL(interceptedRequest.url());
+        if (
+                (boolean) config.get(interceptedRequest.method())
+                        && (
+                        (boolean) config.get("BLACK") && !((String) config.get("DOMAIN")).contains(url.getHost())
+                                || (boolean) config.get("WHITE") && ((String) config.get("DOMAIN")).contains(url.getHost()))
+                        && (interceptedRequest.hasHeader("Cookie") || interceptedRequest.hasHeader("Referer"))
+                        && (suffixFilter(interceptedRequest.url()))
+        ) {
+            interceptedRequestHashMap.put(interceptedRequest.messageId(), interceptedRequest);
+            addLog(String.valueOf(interceptedRequest.messageId()), interceptedRequest.method(), interceptedRequest.url(), "", "", "", "", "");
+        }
+
+    }
+
+    public boolean suffixFilter(String url) {
+        String[] suffixs = ((String) config.get("SUFFIX")).split(",");
+        if (url.contains("?")) {
+            url = url.substring(0, url.indexOf("?"));
+        }
+        for (String suffix : suffixs) {
+            if (url.endsWith(suffix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void addLog(String id, String url, String method, String suspicious, String hasCookie, String rawLength, String noCookie, String randomReferer) {
         DefaultTableModel tableModel = (DefaultTableModel) table_log.getModel();
-//        String[] headers = {"#", "方法", "url", "疑似", "Cookie", "无Cookie", "随机Referer"};
-        String[] log = {id, url, method, suspicious, hasCookie, noCookie, randomReferer};
+//        String[] headers = {"#", "方法", "url", "疑似", "Cookie"，‘’, "无Cookie", "随机Referer"};
+        String[] log = {id, url, method, suspicious, hasCookie, rawLength, noCookie, randomReferer};
         tableModel.addRow(log);
     }
 }
