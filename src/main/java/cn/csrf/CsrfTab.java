@@ -29,6 +29,8 @@ public class CsrfTab extends JComponent {
     //    private HashMap<Integer,Integer> MessageId2Row = new HashMap<>();
     private HashMap<Integer, CsrfMessage> hashMap = new HashMap<>();
 
+    private String blackUrl;
+
     private final Logging logging;
     private JPanel panel_main;
     private JPanel panel_config;
@@ -63,10 +65,12 @@ public class CsrfTab extends JComponent {
     //    private HttpResponseEditor httpResponseEditorRandomRef;
     private TableColumn column;
     private JButton button_save;
+    private JButton button_clean;
 
     private MontoyaApi Api;
 
     public CsrfTab(MontoyaApi montoyaApi) {
+        blackUrl = "";
         this.Api = montoyaApi;
 
         this.logging = Api.logging();
@@ -102,6 +106,7 @@ public class CsrfTab extends JComponent {
         panel_httpDetail = new JPanel();
         textField_Referer = new JTextField();
         button_save = new JButton("保存配置");
+        button_clean = new JButton("清空记录");
         httpRequestEditor = montoyaApi.userInterface().createHttpRequestEditor(EditorOptions.READ_ONLY);
         httpResponseEditorBase = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
         httpResponseEditorNoCookie = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
@@ -212,6 +217,14 @@ public class CsrfTab extends JComponent {
                 textField_domain.setColumns(60);
                 textField_domain.setText((String) config.get("DOMAIN"));
                 panel_domain.add(textField_domain);
+
+                button_clean.addActionListener(e -> {
+                    DefaultTableModel tableModel = (DefaultTableModel) table_log.getModel();
+                    tableModel.setRowCount(0);
+                    hashMap.clear();
+                });
+
+                panel_domain.add(button_clean);
             }
             panel_config.add(panel_domain, BorderLayout.CENTER);
             //======== panel_suffix ========
@@ -229,7 +242,7 @@ public class CsrfTab extends JComponent {
                 panel_suffix.add(radioButton_suffix_white);
 
                 //---- label_suffix ----
-                label_suffix.setText("后缀(半角逗号分隔):");
+                label_suffix.setText("后缀/关键字(半角逗号分隔):");
                 panel_suffix.add(label_suffix);
 
                 //---- textField_suffix ----
@@ -428,15 +441,18 @@ public class CsrfTab extends JComponent {
     }
 
     public void requestHandler(InterceptedRequest interceptedRequest) throws MalformedURLException {
+        String bUrl = interceptedRequest.method() + interceptedRequest.url();
 
         if (
                 (boolean) config.get(interceptedRequest.method())//请求方法
                         && domainFilter(interceptedRequest.url()) //域名过滤
                         && (interceptedRequest.hasHeader("Cookie") || interceptedRequest.hasHeader("Referer")) // 请求头中包含Cookie或者Referer
                         && (suffixFilter(interceptedRequest.url())) //后缀过滤
+                        && (!blackUrl.contains(bUrl))//已有url过滤
         ) {
             hashMap.put(interceptedRequest.messageId(), new CsrfMessage(table_log.getRowCount(), interceptedRequest));
             addLog(String.valueOf(interceptedRequest.messageId()), interceptedRequest.url(), interceptedRequest.method(), "", String.valueOf(interceptedRequest.hasHeader("Cookie")), "", "", "");
+            blackUrl += bUrl + ",";
 
 
         }
@@ -498,13 +514,9 @@ public class CsrfTab extends JComponent {
     }
 
     public boolean suffixFilter(String u) {
-        String url = u;
         String[] suffixs = ((String) config.get("SUFFIX")).split(",");
-        if (url.contains("?")) {
-            url = url.substring(0, url.indexOf("?"));
-        }
         for (String suffix : suffixs) {
-            if (url.endsWith(suffix)) {
+            if (u.contains(suffix)) {
                 return (boolean) config.get("SUFFIX_WHITE");
             }
         }
