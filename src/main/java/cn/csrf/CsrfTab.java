@@ -1,10 +1,9 @@
 package cn.csrf;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.logging.Logging;
-import burp.api.montoya.proxy.ProxyHistoryFilter;
-import burp.api.montoya.proxy.ProxyHttpRequestResponse;
 import burp.api.montoya.proxy.http.InterceptedRequest;
 import burp.api.montoya.proxy.http.InterceptedResponse;
 import burp.api.montoya.ui.editor.EditorOptions;
@@ -17,17 +16,18 @@ import javax.swing.table.TableColumn;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
-import java.util.regex.Pattern;
 
 public class CsrfTab extends JComponent {
 
     public HashMap<String, Object> config = new HashMap<String, Object>();
-    private HashMap<Integer,Integer> MessageId2Row = new HashMap<>();
-    private HashMap<Integer, InterceptedRequest> interceptedRequestHashMap = new HashMap<>();
+    //    private HashMap<Integer,Integer> MessageId2Row = new HashMap<>();
+    private HashMap<Integer, CsrfMessage> hashMap = new HashMap<>();
 
     private final Logging logging;
     private JPanel panel_main;
@@ -55,15 +55,19 @@ public class CsrfTab extends JComponent {
     private JTable table_log;
     private JPanel panel_httpDetail;
     private HttpRequestEditor httpRequestEditor;
+    private HttpResponseEditor httpResponseEditorBase;
     private HttpResponseEditor httpResponseEditorNoCookie;
     private HttpResponseEditor httpResponseEditorRandomRef;
     //    private HttpResponseEditor httpResponseEditorRandomRef;
     private TableColumn column;
     private JButton button_save;
 
-    public CsrfTab(MontoyaApi montoyaApi) {
+    private MontoyaApi Api;
 
-        this.logging = montoyaApi.logging();
+    public CsrfTab(MontoyaApi montoyaApi) {
+        this.Api = montoyaApi;
+
+        this.logging = Api.logging();
         loadConfig();
 //        Panel panel = new Panel();
 //        panel.setLayout(new GridLayout(2, 8,5,5));
@@ -95,9 +99,11 @@ public class CsrfTab extends JComponent {
         panel_httpDetail = new JPanel();
         button_save = new JButton("保存配置");
         httpRequestEditor = montoyaApi.userInterface().createHttpRequestEditor(EditorOptions.READ_ONLY);
+        httpResponseEditorBase = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
         httpResponseEditorNoCookie = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
         httpResponseEditorRandomRef = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
         Component httpRequestEditorComponent = httpRequestEditor.uiComponent();
+        Component httpResponseEditorBaseComponent = httpResponseEditorBase.uiComponent();
         Component httpResponseEditorNoCookieComponent = httpResponseEditorNoCookie.uiComponent();
         Component httpResponseEditorRandomRefComponent = httpResponseEditorRandomRef.uiComponent();
 
@@ -116,8 +122,11 @@ public class CsrfTab extends JComponent {
 //                logging.logToOutput((String) table_log.getValueAt(rowIndex, 0));
 //                logging.logToOutput(montoyaApi.proxy().history().get((Integer) table_log.getValueAt(rowIndex, 0)).toString());
 //                httpRequestEditor.setRequest(montoyaApi.proxy().history().get((Integer) table_log.getValueAt(rowIndex, 0)).request()); //下标和messageId对应不上，不知道为什么
-
-                httpRequestEditor.setRequest(interceptedRequestHashMap.get(Integer.parseInt((String) table_log.getValueAt(rowIndex, 0))));
+                CsrfMessage csrfMessage = hashMap.get(Integer.parseInt((String) table_log.getValueAt(rowIndex, 0)));
+                httpRequestEditor.setRequest(csrfMessage.baseRequest);
+                httpResponseEditorBase.setResponse(csrfMessage.baseResponse);
+                httpResponseEditorNoCookie.setResponse(csrfMessage.noCookieResponse);
+                httpResponseEditorRandomRef.setResponse(csrfMessage.randomRefererResponse);
             }
         };
 
@@ -265,14 +274,19 @@ public class CsrfTab extends JComponent {
 
 //            panel_httpDetail.setOrientation(JSplitPane.HORIZONTAL_SPLIT);
             //---- button2 ----
+            httpRequestEditorComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 4, panel_httpDetail.getHeight()));
             panel_httpDetail.add(httpRequestEditorComponent);
 
             //---- button3 ----
-            httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 3, panel_httpDetail.getHeight()));
+            httpResponseEditorBaseComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 4, panel_httpDetail.getHeight()));
+            panel_httpDetail.add(httpResponseEditorBaseComponent);
+
+            //---- button3 ----
+            httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 4, panel_httpDetail.getHeight()));
             panel_httpDetail.add(httpResponseEditorNoCookieComponent);
 
             //---- button4 ----
-            httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 3, panel_httpDetail.getHeight()));
+            httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(panel_httpDetail.getWidth() / 4, panel_httpDetail.getHeight()));
             panel_httpDetail.add(httpResponseEditorRandomRefComponent);
         }
         panel_main.add(panel_httpDetail, BorderLayout.SOUTH);
@@ -291,12 +305,15 @@ public class CsrfTab extends JComponent {
             @Override
             public void componentResized(ComponentEvent e) {
                 super.componentResized(e);
-                montoyaApi.logging().logToOutput("Windows resize" + e.getComponent().getWidth() + " " + e.getComponent().getHeight());
-                httpRequestEditorComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 3, (int) (e.getComponent().getHeight() * 0.5)));
-                httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 3, (int) (e.getComponent().getHeight() * 0.5)));
-                httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 3, (int) (e.getComponent().getHeight() * 0.5)));
+//                montoyaApi.logging().logToOutput("Windows resize" + e.getComponent().getWidth() + " " + e.getComponent().getHeight());
+                httpRequestEditorComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
+                httpResponseEditorBaseComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
+                httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
+                httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
             }
         });
+
+
 
     }
 
@@ -405,17 +422,46 @@ public class CsrfTab extends JComponent {
                         && (interceptedRequest.hasHeader("Cookie") || interceptedRequest.hasHeader("Referer")) // 请求头中包含Cookie或者Referer
                         && (suffixFilter(interceptedRequest.url())) //后缀过滤
         ) {
-            interceptedRequestHashMap.put(interceptedRequest.messageId(), interceptedRequest);
-            MessageId2Row.put(interceptedRequest.messageId(), table_log.getRowCount());
-            addLog(String.valueOf(interceptedRequest.messageId()), interceptedRequest.method(), interceptedRequest.url(), "", String.valueOf(interceptedRequest.hasHeader("Cookie")), "", "", "");
+            hashMap.put(interceptedRequest.messageId(), new CsrfMessage(table_log.getRowCount(), interceptedRequest));
+            addLog(String.valueOf(interceptedRequest.messageId()), interceptedRequest.url(), interceptedRequest.method(), "", String.valueOf(interceptedRequest.hasHeader("Cookie")), "", "", "");
+
+
         }
 
     }
 
     public void responseHandler(InterceptedResponse interceptedResponse) {
-        if (interceptedRequestHashMap.containsKey(interceptedResponse.messageId())) {
+        if (hashMap.containsKey(interceptedResponse.messageId())) {
 //            InterceptedRequest interceptedRequest = interceptedRequestHashMap.get(interceptedResponse.messageId());
-            table_log.setValueAt(String.valueOf(interceptedResponse.body().length()), MessageId2Row.get(interceptedResponse.messageId()), 5);
+            CsrfMessage csrfMessage = hashMap.get(interceptedResponse.messageId());
+            csrfMessage.baseResponse = interceptedResponse;
+            table_log.setValueAt(String.valueOf(interceptedResponse.body().length()), csrfMessage.row, 5);
+            HttpRequest httpRequestDeleteCookie = csrfMessage.baseRequest.withRemovedHeader("Cookie");
+            HttpRequestResponse deleteCookieRequestResponse = Api.http().sendRequest(httpRequestDeleteCookie);
+            HttpRequest httpRequestRandomReferer = csrfMessage.baseRequest.withRemovedHeader("Referer");
+            httpRequestRandomReferer = httpRequestRandomReferer.withHeader("Referer", "http://www.c.test");
+            HttpRequestResponse randomRefererRequestResponse = Api.http().sendRequest(httpRequestRandomReferer);
+            csrfMessage.noCookieResponse = deleteCookieRequestResponse.response();
+            csrfMessage.randomRefererResponse = randomRefererRequestResponse.response();
+            int responseBodyLength = interceptedResponse.body().length();
+            int deleteCookieResponseBodyLength = deleteCookieRequestResponse.response().body().length();
+            int randomRefererResponseBodyLength = randomRefererRequestResponse.response().body().length();
+            table_log.setValueAt(String.valueOf(deleteCookieResponseBodyLength), csrfMessage.row, 6);
+            table_log.setValueAt(String.valueOf(randomRefererResponseBodyLength), csrfMessage.row, 7);
+            String notice = "";
+            if (responseBodyLength == deleteCookieResponseBodyLength){
+                notice += "缺少Cookie校验 ";
+            }
+            if (responseBodyLength == randomRefererResponseBodyLength){
+                notice += "缺少Referer校验 ";
+            }
+            if (httpRequestRandomReferer.bodyToString().contains("www.c.test")){
+                notice += "返回中包含随机Referer ";
+            }
+            if (notice.isEmpty()){
+                notice = "无";
+            }
+            table_log.setValueAt(notice, csrfMessage.row, 3);
 //            table_log.setValueAt(String.valueOf(interceptedResponse.headerValue("Content-Length")), MessageId2Row.get(interceptedResponse.messageId()), 4);
 
         }
