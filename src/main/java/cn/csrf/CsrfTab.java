@@ -1,8 +1,12 @@
 package cn.csrf;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.logging.Logging;
+import burp.api.montoya.proxy.ProxyHistoryFilter;
+import burp.api.montoya.proxy.ProxyHttpRequestResponse;
 import burp.api.montoya.proxy.http.InterceptedRequest;
+import burp.api.montoya.proxy.http.InterceptedResponse;
 import burp.api.montoya.ui.editor.EditorOptions;
 import burp.api.montoya.ui.editor.HttpRequestEditor;
 import burp.api.montoya.ui.editor.HttpResponseEditor;
@@ -17,12 +21,12 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
-import java.util.Map;
+import java.util.regex.Pattern;
 
 public class CsrfTab extends JComponent {
 
     public HashMap<String, Object> config = new HashMap<String, Object>();
-
+    private HashMap<Integer,Integer> MessageId2Row = new HashMap<>();
     private HashMap<Integer, InterceptedRequest> interceptedRequestHashMap = new HashMap<>();
 
     private final Logging logging;
@@ -39,8 +43,10 @@ public class CsrfTab extends JComponent {
     private JCheckBox checkBox_options;
     private JPanel panel_domain;
     private JPanel panel_suffix;
-    private JRadioButton radioButton_black;
-    private JRadioButton radioButton_white;
+    private JRadioButton radioButton_domain_black;
+    private JRadioButton radioButton_domain_white;
+    private JRadioButton radioButton_suffix_black;
+    private JRadioButton radioButton_suffix_white;
     private JLabel label_domain;
     private JTextField textField_domain;
     private JLabel label_suffix;
@@ -78,8 +84,10 @@ public class CsrfTab extends JComponent {
         checkBox_options = new JCheckBox();
         panel_domain = new JPanel();
         panel_suffix = new JPanel();
-        radioButton_black = new JRadioButton();
-        radioButton_white = new JRadioButton();
+        radioButton_domain_black = new JRadioButton();
+        radioButton_domain_white = new JRadioButton();
+        radioButton_suffix_black = new JRadioButton();
+        radioButton_suffix_white = new JRadioButton();
         label_domain = new JLabel();
         textField_domain = new JTextField();
         label_suffix = new JLabel();
@@ -104,6 +112,10 @@ public class CsrfTab extends JComponent {
             @Override
             public void changeSelection(int rowIndex, int columnIndex, boolean toggle, boolean extend) {
                 super.changeSelection(rowIndex, columnIndex, toggle, extend);
+//                montoyaApi.proxy().history();
+//                logging.logToOutput((String) table_log.getValueAt(rowIndex, 0));
+//                logging.logToOutput(montoyaApi.proxy().history().get((Integer) table_log.getValueAt(rowIndex, 0)).toString());
+//                httpRequestEditor.setRequest(montoyaApi.proxy().history().get((Integer) table_log.getValueAt(rowIndex, 0)).request()); //下标和messageId对应不上，不知道为什么
 
                 httpRequestEditor.setRequest(interceptedRequestHashMap.get(Integer.parseInt((String) table_log.getValueAt(rowIndex, 0))));
             }
@@ -162,15 +174,15 @@ public class CsrfTab extends JComponent {
             {
                 panel_domain.setLayout(new FlowLayout());
 
-                //---- radioButton_black ----
-                radioButton_black.setText("黑名单");
-                radioButton_black.setSelected((Boolean) config.get("BLACK"));
-                panel_domain.add(radioButton_black);
+                //---- radioButton_domain_black ----
+                radioButton_domain_black.setText("黑名单");
+                radioButton_domain_black.setSelected((Boolean) config.get("DOMAIN_BLACK"));
+                panel_domain.add(radioButton_domain_black);
 
-                //---- radioButton_white ----
-                radioButton_white.setText("白名单");
-                radioButton_white.setSelected((Boolean) config.get("WHITE"));
-                panel_domain.add(radioButton_white);
+                //---- radioButton_domain_white ----
+                radioButton_domain_white.setText("白名单");
+                radioButton_domain_white.setSelected((Boolean) config.get("DOMAIN_WHITE"));
+                panel_domain.add(radioButton_domain_white);
 
                 //---- label_domain ----
                 label_domain.setText("域名(半角逗号分隔):");
@@ -186,6 +198,16 @@ public class CsrfTab extends JComponent {
             {
                 panel_suffix.setLayout(new FlowLayout());
 
+                //---- radioButton_suffix_black ----
+                radioButton_suffix_black.setText("黑名单");
+                radioButton_suffix_black.setSelected((Boolean) config.get("SUFFIX_BLACK"));
+                panel_suffix.add(radioButton_suffix_black);
+
+                //---- radioButton_suffix_white ----
+                radioButton_suffix_white.setText("白名单");
+                radioButton_suffix_white.setSelected((Boolean) config.get("SUFFIX_WHITE"));
+                panel_suffix.add(radioButton_suffix_white);
+
                 //---- label_suffix ----
                 label_suffix.setText("后缀(半角逗号分隔):");
                 panel_suffix.add(label_suffix);
@@ -196,8 +218,9 @@ public class CsrfTab extends JComponent {
                 panel_suffix.add(textField_suffix);
                 //---- button_save ----
                 button_save.addActionListener(e -> {
-                    writeConfig(checkBox_get.isSelected(), checkBox_post.isSelected(), checkBox_put.isSelected(), checkBox_delete.isSelected(), checkBox_update.isSelected(), checkBox_head.isSelected(), checkBox_options.isSelected(), radioButton_black.isSelected(), radioButton_white.isSelected(), textField_domain.getText(), textField_suffix.getText());
+                    writeConfig(checkBox_get.isSelected(), checkBox_post.isSelected(), checkBox_put.isSelected(), checkBox_delete.isSelected(), checkBox_update.isSelected(), checkBox_head.isSelected(), checkBox_options.isSelected(), radioButton_domain_black.isSelected(), radioButton_domain_white.isSelected(), textField_domain.getText(), radioButton_suffix_black.isSelected(), radioButton_suffix_white.isSelected(), textField_suffix.getText());
                     JOptionPane.showMessageDialog(null, "保存成功", "提示", JOptionPane.INFORMATION_MESSAGE);
+                    loadConfig();
                 });
                 panel_suffix.add(button_save);
             }
@@ -253,10 +276,14 @@ public class CsrfTab extends JComponent {
             panel_httpDetail.add(httpResponseEditorRandomRefComponent);
         }
         panel_main.add(panel_httpDetail, BorderLayout.SOUTH);
-        //---- buttonGroup_blackOrWhite ----
-        var buttonGroup_blackOrWhite = new ButtonGroup();
-        buttonGroup_blackOrWhite.add(radioButton_black);
-        buttonGroup_blackOrWhite.add(radioButton_white);
+        //---- buttonGroup_domain_blackOrWhite ----
+        var buttonGroup_domain_blackOrWhite = new ButtonGroup();
+        buttonGroup_domain_blackOrWhite.add(radioButton_domain_black);
+        buttonGroup_domain_blackOrWhite.add(radioButton_domain_white);
+
+        var buttonGroup_suffix_BlackOrWhite = new ButtonGroup();
+        buttonGroup_suffix_BlackOrWhite.add(radioButton_suffix_black);
+        buttonGroup_suffix_BlackOrWhite.add(radioButton_suffix_white);
 
 
         add(panel_main);
@@ -273,7 +300,7 @@ public class CsrfTab extends JComponent {
 
     }
 
-    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean black, boolean white, String domain, String suffix) {
+    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean domain_black, boolean domain_white, String domain, boolean suffix_black, boolean suffix_white, String suffix) {
         File file = new File("csrf4burp.conf");
         StringBuilder sb = new StringBuilder();
         sb.append(get);
@@ -290,11 +317,15 @@ public class CsrfTab extends JComponent {
         sb.append(",");
         sb.append(options);
         sb.append("|");
-        sb.append(black);
+        sb.append(domain_black);
         sb.append(",");
-        sb.append(white);
+        sb.append(domain_white);
         sb.append("|");
         sb.append(domain);
+        sb.append("|");
+        sb.append(suffix_black);
+        sb.append(",");
+        sb.append(suffix_white);
         sb.append("|");
         sb.append(suffix);
         try {
@@ -319,13 +350,14 @@ public class CsrfTab extends JComponent {
                 fileReader.close();
                 if (tmpstr == null || !tmpstr.contains("|")) {
                     //配置文件格式错误
-                    writeConfig(false, true, false, false, false, false, false, true, false, "空", ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
-                    tmpstr = "false,true,false,false,false,false,false|true,false|空|.js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt";
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空", true, false, ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
+                    tmpstr = "false,true,false,false,false,false,false|true,false|空|true,false|.js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt";
                 }
                 //解析配置文件
                 String[] configStr = tmpstr.split("\\|");
                 String[] methods = configStr[0].split(",");
-                String[] blackOrWhite = configStr[1].split(",");
+                String[] domainBlackOrWhite = configStr[1].split(",");
+                String[] suffixBlackOrWhite = configStr[3].split(",");
                 String domain = configStr[2];
                 config.put("GET", Boolean.parseBoolean(methods[0]));
                 config.put("POST", Boolean.parseBoolean(methods[1]));
@@ -334,10 +366,12 @@ public class CsrfTab extends JComponent {
                 config.put("UPDATE", Boolean.parseBoolean(methods[4]));
                 config.put("HEAD", Boolean.parseBoolean(methods[5]));
                 config.put("OPTIONS", Boolean.parseBoolean(methods[6]));
-                config.put("BLACK", Boolean.parseBoolean(blackOrWhite[0]));
-                config.put("WHITE", Boolean.parseBoolean(blackOrWhite[1]));
+                config.put("DOMAIN_BLACK", Boolean.parseBoolean(domainBlackOrWhite[0]));
+                config.put("DOMAIN_WHITE", Boolean.parseBoolean(domainBlackOrWhite[1]));
                 config.put("DOMAIN", domain);
-                config.put("SUFFIX", configStr[3]);
+                config.put("SUFFIX_BLACK", Boolean.parseBoolean(suffixBlackOrWhite[0]));
+                config.put("SUFFIX_WHITE", Boolean.parseBoolean(suffixBlackOrWhite[1]));
+                config.put("SUFFIX", configStr[4]);
 
             } else {
                 config.put("GET", false);
@@ -347,12 +381,14 @@ public class CsrfTab extends JComponent {
                 config.put("UPDATE", false);
                 config.put("HEAD", false);
                 config.put("OPTIONS", false);
-                config.put("BLACK", true);
-                config.put("WHITE", false);
+                config.put("DOMAIN_BLACK", true);
+                config.put("DOMAIN_WHITE", false);
                 config.put("DOMAIN", "空");
+                config.put("SUFFIX_BLACK", true);
+                config.put("SUFFIX_WHITE", false);
                 config.put("SUFFIX", ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
                 if (file.createNewFile()) {
-                    writeConfig(false, true, false, false, false, false, false, true, false, "空", ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空", true, false, ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
                 }
             }
 
@@ -362,32 +398,47 @@ public class CsrfTab extends JComponent {
     }
 
     public void requestHandler(InterceptedRequest interceptedRequest) throws MalformedURLException {
-        URL url = new URL(interceptedRequest.url());
+
         if (
-                (boolean) config.get(interceptedRequest.method())
-                        && (
-                        (boolean) config.get("BLACK") && !((String) config.get("DOMAIN")).contains(url.getHost())
-                                || (boolean) config.get("WHITE") && ((String) config.get("DOMAIN")).contains(url.getHost()))
-                        && (interceptedRequest.hasHeader("Cookie") || interceptedRequest.hasHeader("Referer"))
-                        && (suffixFilter(interceptedRequest.url()))
+                (boolean) config.get(interceptedRequest.method())//请求方法
+                        && domainFilter(interceptedRequest.url()) //域名过滤
+                        && (interceptedRequest.hasHeader("Cookie") || interceptedRequest.hasHeader("Referer")) // 请求头中包含Cookie或者Referer
+                        && (suffixFilter(interceptedRequest.url())) //后缀过滤
         ) {
             interceptedRequestHashMap.put(interceptedRequest.messageId(), interceptedRequest);
-            addLog(String.valueOf(interceptedRequest.messageId()), interceptedRequest.method(), interceptedRequest.url(), "", "", "", "", "");
+            MessageId2Row.put(interceptedRequest.messageId(), table_log.getRowCount());
+            addLog(String.valueOf(interceptedRequest.messageId()), interceptedRequest.method(), interceptedRequest.url(), "", String.valueOf(interceptedRequest.hasHeader("Cookie")), "", "", "");
         }
 
     }
 
-    public boolean suffixFilter(String url) {
+    public void responseHandler(InterceptedResponse interceptedResponse) {
+        if (interceptedRequestHashMap.containsKey(interceptedResponse.messageId())) {
+//            InterceptedRequest interceptedRequest = interceptedRequestHashMap.get(interceptedResponse.messageId());
+            table_log.setValueAt(String.valueOf(interceptedResponse.body().length()), MessageId2Row.get(interceptedResponse.messageId()), 5);
+//            table_log.setValueAt(String.valueOf(interceptedResponse.headerValue("Content-Length")), MessageId2Row.get(interceptedResponse.messageId()), 4);
+
+        }
+    }
+
+    public boolean domainFilter(String u) throws MalformedURLException {
+        URL url = new URL(u);
+        return (boolean) config.get("DOMAIN_BLACK") && !((String) config.get("DOMAIN")).contains(url.getHost()) //域名黑名单
+                || (boolean) config.get("DOMAIN_WHITE") && ((String) config.get("DOMAIN")).contains(url.getHost());//域名白名单
+    }
+
+    public boolean suffixFilter(String u) {
+        String url = u;
         String[] suffixs = ((String) config.get("SUFFIX")).split(",");
         if (url.contains("?")) {
             url = url.substring(0, url.indexOf("?"));
         }
         for (String suffix : suffixs) {
             if (url.endsWith(suffix)) {
-                return true;
+                return (boolean) config.get("SUFFIX_WHITE");
             }
         }
-        return false;
+        return (boolean) config.get("SUFFIX_BLACK");
     }
 
     public void addLog(String id, String url, String method, String suspicious, String hasCookie, String rawLength, String noCookie, String randomReferer) {
