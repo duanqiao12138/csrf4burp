@@ -18,7 +18,11 @@ public class CstfHttpResponseHandler implements ProxyResponseHandler {
     }
     @Override
     public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse interceptedResponse) {
-        tab.responseHandler(interceptedResponse);
+        try {
+            tab.responseHandler(interceptedResponse);
+        } catch (MalformedURLException e) {
+            throw new RuntimeException(e);
+        }
         return null;
     }
 

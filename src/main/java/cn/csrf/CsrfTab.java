@@ -34,6 +34,8 @@ public class CsrfTab extends JComponent {
     private JPanel panel_config;
     private JPanel panel_method;
     private JLabel label_method;
+    private JLabel label_Referer;
+    private JTextField textField_Referer;
     private JCheckBox checkBox_get;
     private JCheckBox checkBox_post;
     private JCheckBox checkBox_put;
@@ -79,6 +81,7 @@ public class CsrfTab extends JComponent {
         panel_config = new JPanel();
         panel_method = new JPanel();
         label_method = new JLabel();
+        label_Referer = new JLabel();
         checkBox_get = new JCheckBox();
         checkBox_post = new JCheckBox();
         checkBox_put = new JCheckBox();
@@ -97,6 +100,7 @@ public class CsrfTab extends JComponent {
         label_suffix = new JLabel();
         textField_suffix = new JTextField();
         panel_httpDetail = new JPanel();
+        textField_Referer = new JTextField();
         button_save = new JButton("保存配置");
         httpRequestEditor = montoyaApi.userInterface().createHttpRequestEditor(EditorOptions.READ_ONLY);
         httpResponseEditorBase = montoyaApi.userInterface().createHttpResponseEditor(EditorOptions.READ_ONLY);
@@ -176,6 +180,13 @@ public class CsrfTab extends JComponent {
                 checkBox_options.setText("OPTIONS");
                 checkBox_options.setSelected((Boolean) config.get("OPTIONS"));
                 panel_method.add(checkBox_options);
+
+                label_Referer.setText("Referer:");
+                panel_method.add(label_Referer);
+
+                textField_Referer.setColumns(25);
+                textField_Referer.setText((String) config.get("REFERER"));
+                panel_method.add(textField_Referer);
             }
             panel_config.add(panel_method, BorderLayout.NORTH);
 
@@ -227,7 +238,7 @@ public class CsrfTab extends JComponent {
                 panel_suffix.add(textField_suffix);
                 //---- button_save ----
                 button_save.addActionListener(e -> {
-                    writeConfig(checkBox_get.isSelected(), checkBox_post.isSelected(), checkBox_put.isSelected(), checkBox_delete.isSelected(), checkBox_update.isSelected(), checkBox_head.isSelected(), checkBox_options.isSelected(), radioButton_domain_black.isSelected(), radioButton_domain_white.isSelected(), textField_domain.getText(), radioButton_suffix_black.isSelected(), radioButton_suffix_white.isSelected(), textField_suffix.getText());
+                    writeConfig(checkBox_get.isSelected(), checkBox_post.isSelected(), checkBox_put.isSelected(), checkBox_delete.isSelected(), checkBox_update.isSelected(), checkBox_head.isSelected(), checkBox_options.isSelected(), radioButton_domain_black.isSelected(), radioButton_domain_white.isSelected(), textField_domain.getText(), radioButton_suffix_black.isSelected(), radioButton_suffix_white.isSelected(), textField_suffix.getText(), textField_Referer.getText());
                     JOptionPane.showMessageDialog(null, "保存成功", "提示", JOptionPane.INFORMATION_MESSAGE);
                     loadConfig();
                 });
@@ -240,8 +251,8 @@ public class CsrfTab extends JComponent {
         {
             //======== table_log ========
             {
-                String[] headers = {"#", "URL", "方法", "疑似", "Cookie", "原始长度", "无Cookie", "随机Referer"};
-                int[] columnWidth = {50, 300, 100, 50, 80, 80, 80, 80};
+                String[] headers = {"#", "URL", "方法", "疑似", "原始长度", "无Cookie", "随机Referer"};
+                int[] columnWidth = {50, 300, 100, 50, 80, 80, 80};
                 Object[][] cellData = null;
                 DefaultTableModel tableModel = new DefaultTableModel(cellData, headers) {
                     @Override
@@ -306,18 +317,17 @@ public class CsrfTab extends JComponent {
             public void componentResized(ComponentEvent e) {
                 super.componentResized(e);
 //                montoyaApi.logging().logToOutput("Windows resize" + e.getComponent().getWidth() + " " + e.getComponent().getHeight());
-                httpRequestEditorComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
-                httpResponseEditorBaseComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
-                httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
-                httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.65)));
+                httpRequestEditorComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.6)));
+                httpResponseEditorBaseComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.6)));
+                httpResponseEditorNoCookieComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.6)));
+                httpResponseEditorRandomRefComponent.setPreferredSize(new Dimension(e.getComponent().getWidth() / 4, (int) (e.getComponent().getHeight() * 0.6)));
             }
         });
 
 
-
     }
 
-    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean domain_black, boolean domain_white, String domain, boolean suffix_black, boolean suffix_white, String suffix) {
+    public void writeConfig(boolean get, boolean post, boolean put, boolean delete, boolean update, boolean head, boolean options, boolean domain_black, boolean domain_white, String domain, boolean suffix_black, boolean suffix_white, String suffix, String referer) {
         File file = new File("csrf4burp.conf");
         StringBuilder sb = new StringBuilder();
         sb.append(get);
@@ -345,6 +355,8 @@ public class CsrfTab extends JComponent {
         sb.append(suffix_white);
         sb.append("|");
         sb.append(suffix);
+        sb.append("|");
+        sb.append(referer);
         try {
             FileWriter fileWriter = new FileWriter(file);
             fileWriter.write(sb.toString());
@@ -367,8 +379,8 @@ public class CsrfTab extends JComponent {
                 fileReader.close();
                 if (tmpstr == null || !tmpstr.contains("|")) {
                     //配置文件格式错误
-                    writeConfig(false, true, false, false, false, false, false, true, false, "空", true, false, ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
-                    tmpstr = "false,true,false,false,false,false,false|true,false|空|true,false|.js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt";
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空", true, false, ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt", "http://www.c.test/");
+                    tmpstr = "false,true,false,false,false,false,false|true,false|空|true,false|.js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt|http://www.c.test/";
                 }
                 //解析配置文件
                 String[] configStr = tmpstr.split("\\|");
@@ -389,7 +401,7 @@ public class CsrfTab extends JComponent {
                 config.put("SUFFIX_BLACK", Boolean.parseBoolean(suffixBlackOrWhite[0]));
                 config.put("SUFFIX_WHITE", Boolean.parseBoolean(suffixBlackOrWhite[1]));
                 config.put("SUFFIX", configStr[4]);
-
+                config.put("REFERER", configStr[5]);
             } else {
                 config.put("GET", false);
                 config.put("POST", true);
@@ -404,13 +416,14 @@ public class CsrfTab extends JComponent {
                 config.put("SUFFIX_BLACK", true);
                 config.put("SUFFIX_WHITE", false);
                 config.put("SUFFIX", ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
+                config.put("REFERER", "http://www.c.test/");
                 if (file.createNewFile()) {
-                    writeConfig(false, true, false, false, false, false, false, true, false, "空", true, false, ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt");
+                    writeConfig(false, true, false, false, false, false, false, true, false, "空", true, false, ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt", "http://www.c.test/");
                 }
             }
 
-        } catch (IOException e) {
-            logging.logToError(e);
+        } catch (Exception e) {
+            writeConfig(false, true, false, false, false, false, false, true, false, "空", true, false, ".js,.css,.png,.gif,.jpg,.svg,.ico,.woff,.woff2,.ttf,.mp3,.mp4,.ico,.txt", "http://www.c.test/");
         }
     }
 
@@ -430,35 +443,46 @@ public class CsrfTab extends JComponent {
 
     }
 
-    public void responseHandler(InterceptedResponse interceptedResponse) {
+    public void responseHandler(InterceptedResponse interceptedResponse) throws MalformedURLException {
         if (hashMap.containsKey(interceptedResponse.messageId())) {
+            String notice = "";
+            int responseBodyLength = interceptedResponse.body().length();
 //            InterceptedRequest interceptedRequest = interceptedRequestHashMap.get(interceptedResponse.messageId());
             CsrfMessage csrfMessage = hashMap.get(interceptedResponse.messageId());
             csrfMessage.baseResponse = interceptedResponse;
-            table_log.setValueAt(String.valueOf(interceptedResponse.body().length()), csrfMessage.row, 5);
-            HttpRequest httpRequestDeleteCookie = csrfMessage.baseRequest.withRemovedHeader("Cookie");
-            HttpRequestResponse deleteCookieRequestResponse = Api.http().sendRequest(httpRequestDeleteCookie);
-            HttpRequest httpRequestRandomReferer = csrfMessage.baseRequest.withRemovedHeader("Referer");
-            httpRequestRandomReferer = httpRequestRandomReferer.withHeader("Referer", "http://www.c.test");
-            HttpRequestResponse randomRefererRequestResponse = Api.http().sendRequest(httpRequestRandomReferer);
-            csrfMessage.noCookieResponse = deleteCookieRequestResponse.response();
-            csrfMessage.randomRefererResponse = randomRefererRequestResponse.response();
-            int responseBodyLength = interceptedResponse.body().length();
-            int deleteCookieResponseBodyLength = deleteCookieRequestResponse.response().body().length();
-            int randomRefererResponseBodyLength = randomRefererRequestResponse.response().body().length();
-            table_log.setValueAt(String.valueOf(deleteCookieResponseBodyLength), csrfMessage.row, 6);
-            table_log.setValueAt(String.valueOf(randomRefererResponseBodyLength), csrfMessage.row, 7);
-            String notice = "";
-            if (responseBodyLength == deleteCookieResponseBodyLength){
-                notice += "缺少Cookie校验 ";
+            table_log.setValueAt(String.valueOf(interceptedResponse.body().length()), csrfMessage.row, 4);
+            if (csrfMessage.baseRequest.hasHeader("Cookie")) {
+                HttpRequest httpRequestDeleteCookie = csrfMessage.baseRequest.withRemovedHeader("Cookie");
+                HttpRequestResponse deleteCookieRequestResponse = Api.http().sendRequest(httpRequestDeleteCookie);
+                int deleteCookieResponseBodyLength = deleteCookieRequestResponse.response().body().length();
+                csrfMessage.noCookieResponse = deleteCookieRequestResponse.response();
+                table_log.setValueAt(String.valueOf(deleteCookieResponseBodyLength), csrfMessage.row, 5);
+                if (responseBodyLength == deleteCookieResponseBodyLength) {
+                    notice += "缺少Cookie校验 ";
+                }
+            } else {
+                csrfMessage.noCookieResponse = null;
+                table_log.setValueAt("请求不存在Cookie", csrfMessage.row, 5);
             }
-            if (responseBodyLength == randomRefererResponseBodyLength){
+            String ref = (String) config.get("REFERER");
+            HttpRequest httpRequestRandomReferer = csrfMessage.baseRequest.withRemovedHeader("Referer");
+            httpRequestRandomReferer = httpRequestRandomReferer.withHeader("Referer", ref);
+            HttpRequestResponse randomRefererRequestResponse = Api.http().sendRequest(httpRequestRandomReferer);
+            csrfMessage.randomRefererResponse = randomRefererRequestResponse.response();
+            URL url = new URL(ref);
+
+            int randomRefererResponseBodyLength = randomRefererRequestResponse.response().body().length();
+
+            table_log.setValueAt(String.valueOf(randomRefererResponseBodyLength), csrfMessage.row, 6);
+
+
+            if (responseBodyLength == randomRefererResponseBodyLength) {
                 notice += "缺少Referer校验 ";
             }
-            if (httpRequestRandomReferer.bodyToString().contains("www.c.test")){
+            if (httpRequestRandomReferer.bodyToString().contains(url.getHost())) {
                 notice += "返回中包含随机Referer ";
             }
-            if (notice.isEmpty()){
+            if (notice.isEmpty()) {
                 notice = "无";
             }
             table_log.setValueAt(notice, csrfMessage.row, 3);
